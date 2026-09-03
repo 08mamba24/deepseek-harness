@@ -137,9 +137,12 @@ export function apply(ctx: Context, config: AcpConfig): void {
   // Optional application-ready barrier: when this app lives inside a Loader
   // tree (production stdio deployments), the first ACP request must not run
   // before sibling entries — MCP clients in particular — have completed their
-  // initial startup. Without the gate the transport accepts initialize while
-  // a delayed MCP sibling is still connecting, so the first model request
-  // carries a partial tool inventory (see the ACP startup-race handoff).
+  // initial startup. Sibling entries mount in parallel, so without the gate a
+  // client connecting during cold start can finish initialize (and therefore
+  // session/new + prompt) while a slow MCP sibling is still inside its
+  // connect→listTools window; the first model request then ships a partial
+  // tool inventory (observed: 19 tools / 0 MCP on the first header, 139/120
+  // on the next turn).
   const loader = ctx.get('loader') as LoaderReady | undefined
   const sessions = new Map<SessionId, SessionRecord>()
   let closed = false
