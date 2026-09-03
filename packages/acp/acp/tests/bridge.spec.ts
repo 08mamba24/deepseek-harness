@@ -47,6 +47,39 @@ describe('automation-only ACP bridge', () => {
     await expect(harness.client.authenticate({ methodId: 'unused' })).resolves.toEqual({})
   })
 
+  it('pends initialize until the application-ready gate settles', async () => {
+    let release!: () => void
+    const gate = { await: () => new Promise<void>((resolve) => { release = resolve }) }
+    harness = await makeBridgeHarness({ readyGate: gate })
+
+    let settled = false
+    const initializing = harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+      .then((response) => { settled = true; return response })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(settled).toBe(false)
+    release()
+    await expect(initializing).resolves.toMatchObject({ protocolVersion: PROTOCOL_VERSION })
+  })
+
+  it('fails initialize closed when the application tree fails to settle', async () => {
+    const failure = new Error('mcp-client(fixture): initial connection or tool synchronization failed', {
+      cause: new Error('spawn /nonexistent ENOENT'),
+    })
+    harness = await makeBridgeHarness({ readyGate: { await: () => Promise.reject(failure) } })
+
+    await expect(harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} }))
+      .rejects.toThrow(/mcp-client\(fixture\): initial connection or tool synchronization failed/)
+  })
+
+  it('re-checks the application-ready gate on every initialize', async () => {
+    let attempts = 0
+    harness = await makeBridgeHarness({ readyGate: { await: async () => { attempts += 1 } } })
+
+    await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+    await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+    expect(attempts).toBe(2)
+  })
+
   it('creates a session, emits one committed answer, and settles the prompt', async () => {
     harness = await makeBridgeHarness({ script: [textResponse('hello there')] })
     await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })

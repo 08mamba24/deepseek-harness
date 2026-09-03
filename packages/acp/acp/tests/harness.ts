@@ -179,6 +179,8 @@ export async function makeBridgeHarness(options: {
   persona?: string
   imageCapable?: boolean
   attachments?: boolean
+  /** Fake application-ready gate provided as the `loader` service before the bridge mounts. */
+  readyGate?: { await(): Promise<void> }
 } = {}): Promise<BridgeHarness> {
   const adapter = new MockAdapter(options.script ?? [], options.imageCapable === true)
   const ctx = new Context()
@@ -186,6 +188,7 @@ export async function makeBridgeHarness(options: {
   if (options.attachments !== false) await ctx.plugin(MemoryAttachmentStore)
   const loopFiber = await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)
+  if (options.readyGate !== undefined) ctx.provide('loader', options.readyGate)
 
   const agentToClient = new TransformStream<Uint8Array, Uint8Array>()
   const clientToAgent = new TransformStream<Uint8Array, Uint8Array>()

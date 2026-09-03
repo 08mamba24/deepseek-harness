@@ -72,5 +72,26 @@ server.registerTool('admin.reset', {
   content: [{ type: 'text', text: 'reset done' }],
 }))
 
+// Stable marker for the ACP cold-start readiness e2e (startup-readiness.e2e.ts):
+// the first model request must already see this tool when the fixture's
+// listTools window was delayed.
+server.registerTool('ready_probe', {
+  title: 'Ready Probe',
+  description: 'Stable marker proving this fixture registered before the first model request.',
+  inputSchema: {},
+}, async () => ({
+  content: [{ type: 'text', text: 'ready' }],
+}))
+
+// The host owns this process: exit on stdio EOF instead of lingering without a
+// transport, so a killed ACP host never leaks this child.
+process.stdin.on('end', () => { process.exit(0) })
+process.stdin.on('close', () => { process.exit(0) })
+
+// Optional artificial delay over the whole connect→listTools window for the
+// ACP cold-start readiness e2e; defaults to no delay for every other suite.
+const listToolsDelayMs = Number(process.env.STARTUP_RACE_LIST_TOOLS_DELAY_MS ?? '0')
+if (listToolsDelayMs > 0) await new Promise(resolve => setTimeout(resolve, listToolsDelayMs))
+
 const transport = new StdioServerTransport()
 await server.connect(transport)

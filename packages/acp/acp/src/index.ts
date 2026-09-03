@@ -57,6 +57,17 @@ interface ContinuableDrain {
   drainContinuableDescendants(parents: readonly Agent[]): Promise<void>
 }
 
+/**
+ * Structural startup gate: the owning Loader tree, read once at apply. Its
+ * `await()` settles when every configured entry has activated (or throws the
+ * settled entry failure). Absent outside Loader-hosted apps — see
+ * docs/postmortem/0001 for why ACP handlers must capture services in apply
+ * rather than read them lazily.
+ */
+interface LoaderReady {
+  await(): Promise<void>
+}
+
 /** Preserve invalid-parameter detail in the SDK wire error message. */
 function invalidParams(detail: string): RequestError {
   return RequestError.invalidParams(undefined, detail)
@@ -123,6 +134,13 @@ export function apply(ctx: Context, config: AcpConfig): void {
   // injected service during apply rather than reading it lazily in a callback.
   const agents = ctx.agents
   const logger = ctx.logger
+  // Optional application-ready barrier: when this app lives inside a Loader
+  // tree (production stdio deployments), the first ACP request must not run
+  // before sibling entries — MCP clients in particular — have completed their
+  // initial startup. Without the gate the transport accepts initialize while
+  // a delayed MCP sibling is still connecting, so the first model request
+  // carries a partial tool inventory (see the ACP startup-race handoff).
+  const loader = ctx.get('loader') as LoaderReady | undefined
   const sessions = new Map<SessionId, SessionRecord>()
   let closed = false
   let conn: AgentSideConnection
@@ -290,6 +308,19 @@ export function apply(ctx: Context, config: AcpConfig): void {
       async initialize(_params: InitializeRequest): Promise<InitializeResponse> {
         // Single-version agent: the spec's "same version if supported, else
         // the latest supported" both resolve to this server's one version.
+        // Before advertising anything, wait for the whole application tree to
+        // activate. Sibling entries mount in parallel: without this barrier a
+        // client that connects during cold start gets initialize (and therefore
+        // session/new + prompt) before sibling MCP clients have registered
+        // their tools, and the first model request ships a partial inventory.
+        if (loader !== undefined) {
+          try {
+            await loader.await()
+          } catch (error: unknown) {
+            throw internalError(`application tree did not settle before initialize: ${errorChain(error)}`)
+          }
+        }
+        assertOpen()
         imagePromptEnabled = await supportsAcpImagePrompts(ctx, config.provider, config.model)
         return {
           protocolVersion: PROTOCOL_VERSION,
