@@ -10,6 +10,8 @@ This package is a transport adapter, not a UI integration or a capability seam. 
 
 `apply(ctx, config)` opens an `AgentSideConnection` on stdin/stdout and drives `ctx.agents`. Stdout is reserved for protocol frames.
 
+In a Loader-hosted app, `apply` captures the owning Loader tree and every `initialize` awaits its settle — root-sibling entries, MCP clients in particular, finish their initial registration before the first session or prompt — and a tree that fails to settle rejects `initialize` with the failing cause (fail-closed). Loader-less apps run unchanged.
+
 | Config | Default | Meaning |
 |---|---|---|
 | `provider` | — | Initial provider route for every created agent. |
@@ -21,7 +23,7 @@ Both fields are optional so another agent/request listener may supply the target
 
 | Method | Behavior |
 |---|---|
-| `initialize` | Negotiates the supported version. Image prompts are advertised only when a durable attachment store is mounted and the configured exact provider/model resolves with explicit image input; audio and embedded context stay false. No session, editor, terminal, filesystem, or MCP capability is advertised. |
+| `initialize` | Awaits the owning Loader tree's settle in Loader-hosted apps (a failing tree rejects before negotiation), then negotiates the supported version. Image prompts are advertised only when a durable attachment store is mounted and the configured exact provider/model resolves with explicit image input; audio and embedded context stay false. No session, editor, terminal, filesystem, or MCP capability is advertised. |
 | `authenticate` | No-op because the server advertises no authentication methods. |
 | `session/new` | Creates a fresh agent with an absolute primary `cwd`; empty `additionalDirectories` and `mcpServers` are accepted, non-empty values reject. |
 | `session/prompt` | Preserves ordered text and supported inline image blocks, renders resource links as bracketed textual references, and rejects audio, embedded resources, malformed/empty input, or an image when capability was not advertised. It validates the whole image batch and rechecks the session's latest exact route before any save, commits every image before the user event, permits one in-flight request per session, and waits for admission plus, once queued, whole-Agent idle and ordered output delivery. Normal quiescence reports `end_turn`; explicit ACP cancellation, disposal, or a prompt whose admission was discarded (a turnless slot) reports `cancelled`. |

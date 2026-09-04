@@ -67,6 +67,13 @@ const BACKGROUND_TASK_ADMISSION_CONFIG = fileURLToPath(
 const PRODUCT_SUBAGENT_CODEX_CONFIG = fileURLToPath(new URL('../product-subagent-codex.cordis.yml', import.meta.url))
 const PRODUCT_SUBAGENT_BOTH_CONFIG = fileURLToPath(new URL('../product-subagent-both.cordis.yml', import.meta.url))
 const FS_DIFF_BOUND_CONFIG = fileURLToPath(new URL('./fs-diff-bound.cordis.yml', import.meta.url))
+const MCP_READINESS_CONFIG = fileURLToPath(new URL('./mcp-readiness.cordis.yml', import.meta.url))
+// The dsh-mcp-client fixture server (shared with its own e2e suite); the
+// overlay reads the path from the environment because the subprocess cwd is a
+// temp dir outside the repo.
+const MCP_FIXTURE_SERVER = fileURLToPath(
+  new URL('../../../packages/mcp/mcp-client/tests/fixture-server.ts', import.meta.url),
+)
 const SNAPSHOTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'snapshots')
 const PACKED_CHUNKS_SOURCE = 'hook-cc-pretool-deny'
 
@@ -629,6 +636,23 @@ const SCENARIOS: Scenario[] = [
     configPath: SESSION_SANDBOX_ROOT_CONFIG,
     env: { DSH_PERMISSION_MODE: 'workspace-write' },
     workspaceParent: homedir(),
+  },
+  // Authored keyless replay of the MCP cold-start readiness composition: the
+  // overlay appends one root-level dsh-mcp-client sibling whose fixture server
+  // delays its connect→listTools window — the exact root-sibling shape a
+  // production host composes. The pinned first request/header therefore guards
+  // the Loader-hosted initialize barrier end to end: without the barrier the
+  // first model request ships while the sibling is still registering and the
+  // pinned mcp__fixture__* schemas are missing. The replayed reply is the seed
+  // transcript's; this scenario pins composition, not model behavior.
+  {
+    name: 'mcp-readiness',
+    hasModelTurn: true,
+    recorded: false,
+    pinsHeader: true,
+    headerClass: 'mcp-readiness',
+    configPath: MCP_READINESS_CONFIG,
+    env: { DSH_MCP_FIXTURE_SERVER: MCP_FIXTURE_SERVER },
   },
 ]
 
